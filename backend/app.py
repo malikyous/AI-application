@@ -9,16 +9,12 @@ import google.generativeai as genai
 from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader
 
-from models import ChatSession, Message, Template, db
+from models import ChatSession, Message, Template
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL", "sqlite:///chat.db"
-).replace("postgres://", "postgresql://")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "uploads")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 
@@ -27,7 +23,6 @@ ALLOWED_EXTENSIONS = {"txt", "pdf", "png", "jpg", "jpeg", "gif", "doc", "docx", 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 CORS(app, resources={r"/*": {"origins": "*"}})
-db.init_app(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 genai_client = None
@@ -94,63 +89,68 @@ def health():
 
 @app.route("/api/sessions", methods=["GET"])
 def get_sessions():
-    sessions = ChatSession.query.order_by(ChatSession.updated_at.desc()).all()
+    sessions = ChatSession.get_all()
     return jsonify([s.to_dict() for s in sessions])
 
 
 @app.route("/api/sessions", methods=["POST"])
 def create_session():
     session = ChatSession()
-    db.session.add(session)
-    db.session.commit()
+    session.save()
     return jsonify(session.to_dict()), 201
 
 
-@app.route("/api/sessions/<int:session_id>", methods=["GET"])
+@app.route("/api/sessions/<session_id>", methods=["GET"])
 def get_session(session_id):
-    session = ChatSession.query.get_or_404(session_id)
-    messages = Message.query.filter_by(session_id=session_id).order_by(Message.created_at).all()
+    session = ChatSession.get_by_id(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+    messages = Message.get_by_session(session_id)
     return jsonify({
         "session": session.to_dict(),
         "messages": [m.to_dict() for m in messages],
     })
 
 
-@app.route("/api/sessions/<int:session_id>", methods=["DELETE"])
+@app.route("/api/sessions/<session_id>", methods=["DELETE"])
 def delete_session(session_id):
-    session = ChatSession.query.get_or_404(session_id)
-    for msg in session.messages:
+    session = ChatSession.get_by_id(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+    messages = Message.get_by_session(session_id)
+    for msg in messages:
         if msg.file_path and os.path.exists(msg.file_path):
             os.remove(msg.file_path)
-    db.session.delete(session)
-    db.session.commit()
+    ChatSession.delete(session_id)
     return jsonify({"message": "Session deleted"})
 
 
-@app.route("/api/sessions/<int:session_id>/messages", methods=["POST"])
+@app.route("/api/sessions/<session_id>/messages", methods=["POST"])
 def send_message(session_id):
-    session = ChatSession.query.get_or_404(session_id)
+    session = ChatSession.get_by_id(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
     data = request.get_json()
     content = data.get("content", "").strip()
     if not content:
         return jsonify({"error": "Message content is required"}), 400
 
     user_msg = Message(session_id=session_id, role="user", content=content)
-    db.session.add(user_msg)
+    user_msg.save()
 
     if session.title == "New Chat":
         session.title = content[:50] + ("..." if len(content) > 50 else "")
 
     session.updated_at = datetime.now(timezone.utc)
+    session.save()
 
-    history = Message.query.filter_by(session_id=session_id).order_by(Message.created_at).all()
+    history = Message.get_by_session(session_id)
     ai_messages = [{"role": m.role, "content": m.content} for m in history]
     ai_messages.append({"role": "user", "content": content})
 
     ai_content = get_ai_response(ai_messages)
     ai_msg = Message(session_id=session_id, role="assistant", content=ai_content)
-    db.session.add(ai_msg)
-    db.session.commit()
+    ai_msg.save()
 
     return jsonify({
         "user_message": user_msg.to_dict(),
@@ -164,7 +164,7 @@ def upload_file():
         return jsonify({"error": "No file provided"}), 400
 
     file = request.files["file"]
-    session_id = request.form.get("session_id", type=int)
+    session_id = request.form.get("session_id")
 
     if not file.filename:
         return jsonify({"error": "No file selected"}), 400
@@ -173,7 +173,9 @@ def upload_file():
     if not session_id:
         return jsonify({"error": "session_id is required"}), 400
 
-    session = ChatSession.query.get_or_404(session_id)
+    session = ChatSession.get_by_id(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
     filename = secure_filename(file.filename)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     unique_name = f"{timestamp}_{filename}"
@@ -193,23 +195,23 @@ def upload_file():
         file_name=filename,
         file_path=filepath,
     )
-    db.session.add(user_msg)
+    user_msg.save()
 
     if session.title == "New Chat":
         session.title = f"File: {filename[:40]}"
 
     session.updated_at = datetime.now(timezone.utc)
+    session.save()
 
     ai_messages = [
         {"role": m.role, "content": m.content}
-        for m in Message.query.filter_by(session_id=session_id).order_by(Message.created_at)
+        for m in Message.get_by_session(session_id)
     ]
     ai_messages.append({"role": "user", "content": content})
 
     ai_content = get_ai_response(ai_messages)
     ai_msg = Message(session_id=session_id, role="assistant", content=ai_content)
-    db.session.add(ai_msg)
-    db.session.commit()
+    ai_msg.save()
 
     return jsonify({
         "user_message": user_msg.to_dict(),
@@ -221,7 +223,7 @@ def upload_file():
 
 @app.route("/api/templates", methods=["GET"])
 def get_templates():
-    templates = Template.query.order_by(Template.created_at.desc()).all()
+    templates = Template.get_all()
     return jsonify([t.to_dict() for t in templates])
 
 
@@ -236,25 +238,24 @@ def create_template():
         return jsonify({"error": "Name and content are required"}), 400
     
     template = Template(name=name, content=content, category=category)
-    db.session.add(template)
-    db.session.commit()
+    template.save()
     return jsonify(template.to_dict()), 201
 
 
-@app.route("/api/templates/<int:template_id>", methods=["DELETE"])
+@app.route("/api/templates/<template_id>", methods=["DELETE"])
 def delete_template(template_id):
-    template = Template.query.get_or_404(template_id)
-    db.session.delete(template)
-    db.session.commit()
+    Template.delete(template_id)
     return jsonify({"message": "Template deleted"})
 
 
 # ── Export Chat API ─────────────────────────────────────────────────────────
 
-@app.route("/api/sessions/<int:session_id>/export", methods=["GET"])
+@app.route("/api/sessions/<session_id>/export", methods=["GET"])
 def export_session(session_id):
-    session = ChatSession.query.get_or_404(session_id)
-    messages = Message.query.filter_by(session_id=session_id).order_by(Message.created_at).all()
+    session = ChatSession.get_by_id(session_id)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+    messages = Message.get_by_session(session_id)
     
     export_text = f"Chat Export: {session.title}\n"
     export_text += f"Exported: {datetime.now(timezone.utc).isoformat()}\n"
@@ -281,9 +282,7 @@ def search_messages():
     if not query:
         return jsonify([])
     
-    messages = Message.query.filter(
-        Message.content.ilike(f"%{query}%")
-    ).order_by(Message.created_at.desc()).limit(50).all()
+    messages = Message.search(query)
     
     return jsonify([m.to_dict() for m in messages])
 
@@ -319,39 +318,35 @@ def handle_send_message(data):
         emit("error", {"message": "session_id and content are required"})
         return
 
-    session = ChatSession.query.get(session_id)
+    session = ChatSession.get_by_id(session_id)
     if not session:
         emit("error", {"message": "Session not found"})
         return
 
     user_msg = Message(session_id=session_id, role="user", content=content)
-    db.session.add(user_msg)
+    user_msg.save()
 
     if session.title == "New Chat":
         session.title = content[:50] + ("..." if len(content) > 50 else "")
 
     session.updated_at = datetime.now(timezone.utc)
-    db.session.commit()
+    session.save()
 
     emit("new_message", user_msg.to_dict(), room=f"session_{session_id}")
     emit("ai_typing", {"session_id": session_id}, room=f"session_{session_id}")
 
-    history = Message.query.filter_by(session_id=session_id).order_by(Message.created_at).all()
+    history = Message.get_by_session(session_id)
     ai_messages = [{"role": m.role, "content": m.content} for m in history]
     ai_content = get_ai_response(ai_messages)
 
     ai_msg = Message(session_id=session_id, role="assistant", content=ai_content)
-    db.session.add(ai_msg)
-    db.session.commit()
+    ai_msg.save()
 
     emit("new_message", ai_msg.to_dict(), room=f"session_{session_id}")
     emit("ai_done", {"session_id": session_id}, room=f"session_{session_id}")
 
 
 # ── Init ──────────────────────────────────────────────────────────────────
-
-with app.app_context():
-    db.create_all()
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
