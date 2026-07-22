@@ -30,7 +30,8 @@ api_key = os.getenv("GOOGLE_AI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
     try:
-        genai_client = genai.GenerativeModel('models/gemini-3.5-flash')
+        genai_client = genai.GenerativeModel('gemini-1.5-flash')
+        print("✓ Google AI configured successfully")
     except Exception as e:
         print(f"Error configuring model: {e}")
         genai_client = None
