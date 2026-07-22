@@ -10,8 +10,22 @@ from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader
 
 from models import ChatSession, Message, Template, db
+from pymongo.errors import OperationFailure
 
 load_dotenv()
+
+def handle_db_error(f):
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except OperationFailure as e:
+            if "authentication failed" in str(e):
+                return jsonify({"error": "MongoDB authentication failed. Check your MONGODB_URI in .env file"}), 503
+            return jsonify({"error": f"Database error: {str(e)}"}), 500
+        except Exception as e:
+            return jsonify({"error": f"Server error: {str(e)}"}), 500
+    wrapper.__name__ = f.__name__
+    return wrapper
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
@@ -89,6 +103,7 @@ def health():
 
 
 @app.route("/api/sessions", methods=["GET"])
+@handle_db_error
 def get_sessions():
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -97,6 +112,7 @@ def get_sessions():
 
 
 @app.route("/api/sessions", methods=["POST"])
+@handle_db_error
 def create_session():
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -106,6 +122,7 @@ def create_session():
 
 
 @app.route("/api/sessions/<session_id>", methods=["GET"])
+@handle_db_error
 def get_session(session_id):
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -120,6 +137,7 @@ def get_session(session_id):
 
 
 @app.route("/api/sessions/<session_id>", methods=["DELETE"])
+@handle_db_error
 def delete_session(session_id):
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -135,6 +153,7 @@ def delete_session(session_id):
 
 
 @app.route("/api/sessions/<session_id>/messages", methods=["POST"])
+@handle_db_error
 def send_message(session_id):
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -170,6 +189,7 @@ def send_message(session_id):
 
 
 @app.route("/api/upload", methods=["POST"])
+@handle_db_error
 def upload_file():
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -235,6 +255,7 @@ def upload_file():
 # ── Templates API ───────────────────────────────────────────────────────────
 
 @app.route("/api/templates", methods=["GET"])
+@handle_db_error
 def get_templates():
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -243,6 +264,7 @@ def get_templates():
 
 
 @app.route("/api/templates", methods=["POST"])
+@handle_db_error
 def create_template():
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -260,6 +282,7 @@ def create_template():
 
 
 @app.route("/api/templates/<template_id>", methods=["DELETE"])
+@handle_db_error
 def delete_template(template_id):
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -270,6 +293,7 @@ def delete_template(template_id):
 # ── Export Chat API ─────────────────────────────────────────────────────────
 
 @app.route("/api/sessions/<session_id>/export", methods=["GET"])
+@handle_db_error
 def export_session(session_id):
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
@@ -298,6 +322,7 @@ def export_session(session_id):
 # ── Search API ─────────────────────────────────────────────────────────────
 
 @app.route("/api/search", methods=["GET"])
+@handle_db_error
 def search_messages():
     if not db.connected:
         return jsonify({"error": "Database not connected"}), 503
