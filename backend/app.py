@@ -9,7 +9,7 @@ import google.generativeai as genai
 from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader
 
-from models import ChatSession, Message, Template
+from models import ChatSession, Message, Template, db
 
 load_dotenv()
 
@@ -89,12 +89,16 @@ def health():
 
 @app.route("/api/sessions", methods=["GET"])
 def get_sessions():
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     sessions = ChatSession.get_all()
     return jsonify([s.to_dict() for s in sessions])
 
 
 @app.route("/api/sessions", methods=["POST"])
 def create_session():
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     session = ChatSession()
     session.save()
     return jsonify(session.to_dict()), 201
@@ -102,6 +106,8 @@ def create_session():
 
 @app.route("/api/sessions/<session_id>", methods=["GET"])
 def get_session(session_id):
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     session = ChatSession.get_by_id(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -114,6 +120,8 @@ def get_session(session_id):
 
 @app.route("/api/sessions/<session_id>", methods=["DELETE"])
 def delete_session(session_id):
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     session = ChatSession.get_by_id(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -127,6 +135,8 @@ def delete_session(session_id):
 
 @app.route("/api/sessions/<session_id>/messages", methods=["POST"])
 def send_message(session_id):
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     session = ChatSession.get_by_id(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -160,6 +170,8 @@ def send_message(session_id):
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
@@ -223,12 +235,16 @@ def upload_file():
 
 @app.route("/api/templates", methods=["GET"])
 def get_templates():
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     templates = Template.get_all()
     return jsonify([t.to_dict() for t in templates])
 
 
 @app.route("/api/templates", methods=["POST"])
 def create_template():
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     data = request.get_json()
     name = data.get("name", "").strip()
     content = data.get("content", "").strip()
@@ -244,6 +260,8 @@ def create_template():
 
 @app.route("/api/templates/<template_id>", methods=["DELETE"])
 def delete_template(template_id):
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     Template.delete(template_id)
     return jsonify({"message": "Template deleted"})
 
@@ -252,6 +270,8 @@ def delete_template(template_id):
 
 @app.route("/api/sessions/<session_id>/export", methods=["GET"])
 def export_session(session_id):
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     session = ChatSession.get_by_id(session_id)
     if not session:
         return jsonify({"error": "Session not found"}), 404
@@ -278,6 +298,8 @@ def export_session(session_id):
 
 @app.route("/api/search", methods=["GET"])
 def search_messages():
+    if not db.connected:
+        return jsonify({"error": "Database not connected"}), 503
     query = request.args.get("q", "").strip()
     if not query:
         return jsonify([])

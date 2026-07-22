@@ -10,18 +10,22 @@ class MongoDB:
     def __init__(self):
         self.client = None
         self.db = None
+        self.connected = False
         self.connect()
     
     def connect(self):
         mongo_uri = os.getenv("MONGODB_URI", "mongodb+srv://Muhmmad1404:Muhmmadyousaf1404@cluster0.f3nzphr.mongodb.net/ai_chat?appName=Cluster0")
-        self.client = MongoClient(mongo_uri)
-        self.db = self.client.get_database()
-        # Test connection
         try:
+            self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            self.db = self.client.get_database()
+            # Test connection
             self.client.admin.command('ping')
+            self.connected = True
             print("✓ MongoDB connected successfully")
         except Exception as e:
+            self.connected = False
             print(f"✗ MongoDB connection error: {e}")
+            print("⚠ App will run in degraded mode without database")
     
     def get_collection(self, name):
         return self.db[name]
