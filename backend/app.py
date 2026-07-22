@@ -6,6 +6,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import google.generativeai as genai
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader
 
@@ -44,7 +46,7 @@ api_key = os.getenv("GOOGLE_AI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
     try:
-        genai_client = genai.GenerativeModel('gemini-1.5-flash')
+        genai_client = genai.GenerativeModel('gemini-2.0-flash')
         print("✓ Google AI configured successfully")
     except Exception as e:
         print(f"Error configuring model: {e}")
