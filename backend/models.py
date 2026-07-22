@@ -14,7 +14,7 @@ class MongoDB:
         self.connect()
     
     def connect(self):
-        mongo_uri = os.getenv("MONGODB_URI", "mongodb+srv://Muhmmad1404:Muhmmadyousaf1404@cluster0.f3nzphr.mongodb.net/ai_chat?appName=Cluster0")
+        mongo_uri = os.getenv("MONGODB_URI", "mongodb+srv://Muhmmad1404:Muhmmadyousaf1404@cluster0.f3nzphr.mongodb.net/AI-chat?appName=Cluster0")
         try:
             self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
             self.db = self.client.get_database()
@@ -41,8 +41,9 @@ class ChatSession:
         self.updated_at = datetime.now(timezone.utc)
     
     def save(self):
-        collection = db.get_collection("chat_sessions")
+        collection = db.get_collection("AI")
         data = {
+            "type": "chat_session",
             "title": self.title,
             "created_at": self.created_at,
             "updated_at": self.updated_at
@@ -65,14 +66,14 @@ class ChatSession:
     
     @staticmethod
     def get_all():
-        collection = db.get_collection("chat_sessions")
-        sessions = list(collection.find().sort("updated_at", -1))
+        collection = db.get_collection("AI")
+        sessions = list(collection.find({"type": "chat_session"}).sort("updated_at", -1))
         return [ChatSession._from_doc(doc) for doc in sessions]
     
     @staticmethod
     def get_by_id(session_id):
-        collection = db.get_collection("chat_sessions")
-        doc = collection.find_one({"_id": ObjectId(session_id)})
+        collection = db.get_collection("AI")
+        doc = collection.find_one({"_id": ObjectId(session_id), "type": "chat_session"})
         return ChatSession._from_doc(doc) if doc else None
     
     @staticmethod
@@ -87,8 +88,8 @@ class ChatSession:
     
     @staticmethod
     def delete(session_id):
-        collection = db.get_collection("chat_sessions")
-        collection.delete_one({"_id": ObjectId(session_id)})
+        collection = db.get_collection("AI")
+        collection.delete_one({"_id": ObjectId(session_id), "type": "chat_session"})
         Message.delete_by_session(session_id)
 
 
@@ -103,8 +104,9 @@ class Message:
         self.created_at = datetime.now(timezone.utc)
     
     def save(self):
-        collection = db.get_collection("messages")
+        collection = db.get_collection("AI")
         data = {
+            "type": "message",
             "session_id": self.session_id,
             "role": self.role,
             "content": self.content,
@@ -132,24 +134,24 @@ class Message:
     
     @staticmethod
     def get_by_session(session_id):
-        collection = db.get_collection("messages")
-        messages = list(collection.find({"session_id": session_id}).sort("created_at", 1))
+        collection = db.get_collection("AI")
+        messages = list(collection.find({"type": "message", "session_id": session_id}).sort("created_at", 1))
         return [Message._from_doc(doc) for doc in messages]
     
     @staticmethod
     def count_by_session(session_id):
-        collection = db.get_collection("messages")
-        return collection.count_documents({"session_id": session_id})
+        collection = db.get_collection("AI")
+        return collection.count_documents({"type": "message", "session_id": session_id})
     
     @staticmethod
     def delete_by_session(session_id):
-        collection = db.get_collection("messages")
-        collection.delete_many({"session_id": session_id})
+        collection = db.get_collection("AI")
+        collection.delete_many({"type": "message", "session_id": session_id})
     
     @staticmethod
     def search(query):
-        collection = db.get_collection("messages")
-        messages = list(collection.find({"content": {"$regex": query, "$options": "i"}}).sort("created_at", -1).limit(50))
+        collection = db.get_collection("AI")
+        messages = list(collection.find({"type": "message", "content": {"$regex": query, "$options": "i"}}).sort("created_at", -1).limit(50))
         return [Message._from_doc(doc) for doc in messages]
     
     @staticmethod
@@ -173,8 +175,9 @@ class Template:
         self.created_at = datetime.now(timezone.utc)
     
     def save(self):
-        collection = db.get_collection("templates")
+        collection = db.get_collection("AI")
         data = {
+            "type": "template",
             "name": self.name,
             "content": self.content,
             "category": self.category,
@@ -198,20 +201,20 @@ class Template:
     
     @staticmethod
     def get_all():
-        collection = db.get_collection("templates")
-        templates = list(collection.find().sort("created_at", -1))
+        collection = db.get_collection("AI")
+        templates = list(collection.find({"type": "template"}).sort("created_at", -1))
         return [Template._from_doc(doc) for doc in templates]
     
     @staticmethod
     def get_by_id(template_id):
-        collection = db.get_collection("templates")
-        doc = collection.find_one({"_id": ObjectId(template_id)})
+        collection = db.get_collection("AI")
+        doc = collection.find_one({"_id": ObjectId(template_id), "type": "template"})
         return Template._from_doc(doc) if doc else None
     
     @staticmethod
     def delete(template_id):
-        collection = db.get_collection("templates")
-        collection.delete_one({"_id": ObjectId(template_id)})
+        collection = db.get_collection("AI")
+        collection.delete_one({"_id": ObjectId(template_id), "type": "template"})
     
     @staticmethod
     def _from_doc(doc):
